@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import API from '../api';
-import { jwtDecode } from 'jwt-decode'; // Ensure installed: npm install jwt-decode
+import { jwtDecode } from 'jwt-decode';
 
 export const AuthContext = createContext();
 
@@ -11,6 +11,8 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   const decodeAndSetUser = useCallback((newToken) => {
+    console.log('decodeAndSetUser called with token:', newToken ? 'exists' : 'null');
+    
     if (!newToken) {
       setToken(null);
       setUser(null);
@@ -20,21 +22,32 @@ export const AuthProvider = ({ children }) => {
 
     try {
       const decoded = jwtDecode(newToken);
+      console.log('Decoded JWT:', decoded);
+      
       const isExpired = decoded.exp * 1000 < Date.now();
+      console.log('Token expired?', isExpired);
 
       if (isExpired) {
         throw new Error('Token expired');
       }
 
       setToken(newToken);
-      setUser({
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role,
-      });
+      
+      // Create user object from decoded JWT
+      // Handle different possible JWT structures
+      const userData = {
+        id: decoded.id || decoded.userId || decoded.user?.id || decoded._id,
+        email: decoded.email || decoded.user?.email,
+        role: decoded.role || decoded.user?.role,
+        name: decoded.name || decoded.user?.name,
+      };
+      
+      console.log('Setting user data:', userData);
+      setUser(userData);
       localStorage.setItem('token', newToken);
+      
     } catch (err) {
-      console.error('Token error:', err.message);
+      console.error('Token decode error:', err.message);
       setToken(null);
       setUser(null);
       localStorage.removeItem('token');
@@ -42,8 +55,13 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    console.log('AuthProvider mounting, checking existing token...');
     const existingToken = localStorage.getItem('token');
-    decodeAndSetUser(existingToken);
+    console.log('Existing token:', existingToken ? 'found' : 'not found');
+    
+    if (existingToken) {
+      decodeAndSetUser(existingToken);
+    }
     setLoading(false);
   }, [decodeAndSetUser]);
 
@@ -51,6 +69,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const handleStorageChange = (e) => {
       if (e.key === 'token') {
+        console.log('Storage change detected for token');
         decodeAndSetUser(localStorage.getItem('token'));
       }
     };
@@ -62,11 +81,13 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setError(null);
+      console.log('Attempting login...');
       const res = await API.post('/auth/login', { email, password });
+      console.log('Login response:', res.data);
       decodeAndSetUser(res.data.token);
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed.';
-      console.error(message);
+      console.error('Login error:', message);
       setError(message);
     }
   };
@@ -74,20 +95,33 @@ export const AuthProvider = ({ children }) => {
   const register = async (name, email, password) => {
     try {
       setError(null);
+      console.log('Attempting registration...');
       const res = await API.post('/auth/register', { name, email, password });
+      console.log('Register response:', res.data);
       decodeAndSetUser(res.data.token);
     } catch (err) {
       const message = err.response?.data?.message || 'Registration failed.';
-      console.error(message);
+      console.error('Register error:', message);
       setError(message);
     }
   };
 
   const logout = () => {
+    console.log('Logging out...');
     decodeAndSetUser(null);
   };
 
-  const isAuthenticated = !!token && !!user;
+  const isAuthenticated = !!token && !!user && !!user.id;
+
+  // Debug: Log current auth state
+  useEffect(() => {
+    console.log('Auth state updated:', {
+      hasToken: !!token,
+      hasUser: !!user,
+      userId: user?.id,
+      isAuthenticated
+    });
+  }, [token, user, isAuthenticated]);
 
   return (
     <AuthContext.Provider

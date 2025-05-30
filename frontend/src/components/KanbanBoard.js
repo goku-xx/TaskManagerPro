@@ -34,7 +34,14 @@ function KanbanBoard() {
   const [error, setError] = useState(null);
   const [openModal, setOpenModal] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
-  const { user } = useContext(AuthContext);
+  const { user, isAuthenticated } = useContext(AuthContext);
+
+  // Debug: Log user object to see its structure
+  useEffect(() => {
+    console.log('User object:', user);
+    console.log('Is authenticated:', isAuthenticated);
+    console.log('Token exists:', !!localStorage.getItem('token'));
+  }, [user, isAuthenticated]);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -55,8 +62,10 @@ function KanbanBoard() {
   }, []);
 
   useEffect(() => {
-    if (user) fetchTasks();
-  }, [user, fetchTasks]);
+    if (user && isAuthenticated) {
+      fetchTasks();
+    }
+  }, [user, isAuthenticated, fetchTasks]);
 
   const handleOpenModal = (task = null) => {
     setTaskToEdit(task);
@@ -70,8 +79,20 @@ function KanbanBoard() {
 
   const handleSubmitTask = async (taskData) => {
     setError(null);
+    
+    console.log('handleSubmitTask called with:', taskData);
+    console.log('Current user:', user);
+    console.log('Is authenticated:', isAuthenticated);
+    
+    // Check if user is authenticated
+    if (!isAuthenticated || !user) {
+      setError("User not authenticated. Please log in.");
+      return;
+    }
+
     try {
       if (taskData._id) {
+        // Update existing task
         const updatedPayload = {
           ...taskToEdit,
           title: taskData.title,
@@ -79,23 +100,36 @@ function KanbanBoard() {
           status: taskData.status,
         };
         const { _id, ...data } = updatedPayload;
+        console.log('Updating task:', _id, 'with data:', data);
         await API.put(`/tasks/${_id}`, data);
       } else {
-        if (!user?._id) {
-          setError("User not authenticated. Please log in.");
+        // Create new task
+        const userId = user.id;
+        console.log('User ID for new task:', userId);
+        
+        if (!userId) {
+          console.error('User ID not found in user object:', user);
+          setError("Project ID is required to create a task. User ID not found.");
           return;
         }
+
         const newTask = {
           title: taskData.title,
           description: taskData.description,
-          status: taskData.status,
-          projectId: user._id,
+          status: taskData.status || 'todo',
+          projectId: userId, // Using user.id from AuthContext
         };
-        await API.post('/tasks', newTask);
+        
+        console.log('Creating task with data:', newTask);
+        const response = await API.post('/tasks', newTask);
+        console.log('Task creation response:', response.data);
       }
+      
       fetchTasks();
       handleCloseModal();
     } catch (err) {
+      console.error('Task submission error:', err);
+      console.error('Error response:', err.response?.data);
       setError(err.response?.data?.message || "Could not save task. Please try again.");
     }
   };
@@ -135,14 +169,26 @@ function KanbanBoard() {
       await API.put(`/tasks/${draggableId}`, { ...taskToMove, status: destination.droppableId });
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update task. Reverting.");
-      fetchTasks(); // Optionally rollback on failure
+      fetchTasks(); // Rollback on failure
     }
   };
 
+  // Show loading while checking authentication
   if (loading) {
     return (
       <Container sx={{ py: 4, textAlign: 'center' }}>
         <CircularProgress />
+      </Container>
+    );
+  }
+
+  // Show message if not authenticated
+  if (!isAuthenticated || !user) {
+    return (
+      <Container sx={{ py: 4, textAlign: 'center' }}>
+        <Alert severity="warning">
+          Please log in to access the Kanban board.
+        </Alert>
       </Container>
     );
   }
