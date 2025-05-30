@@ -16,7 +16,9 @@ const Navbar = () => {
         </Typography>
         {isAuthenticated && user && (
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography sx={{ mr: 2 }}>Welcome, {user.email || 'User'}</Typography>
+            <Typography sx={{ mr: 2 }}>
+              Welcome, {user.name || user.email || 'User'}
+            </Typography>
             <Button color="inherit" onClick={logout}>
               Logout
             </Button>

@@ -1,49 +1,73 @@
 import React, { createContext, useState, useEffect, useCallback } from 'react';
 import API from '../api';
-import { jwtDecode } from 'jwt-decode'; // You might need to install jwt-decode: npm install jwt-decode
+import { jwtDecode } from 'jwt-decode'; // Ensure installed: npm install jwt-decode
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('token'));
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const updateUserFromToken = useCallback((currentToken) => {
-    if (currentToken) {
-      try {
-        const decodedUser = jwtDecode(currentToken); // Assumes token contains user info like id, role
-        setUser({ id: decodedUser.id, email: decodedUser.email, role: decodedUser.role }); // Adjust based on your JWT payload
-        localStorage.setItem('token', currentToken);
-        setToken(currentToken);
-      } catch (e) {
-        console.error("Failed to decode token:", e);
-        localStorage.removeItem('token');
-        setToken(null);
-        setUser(null);
-      }
-    } else {
-      localStorage.removeItem('token');
+  const decodeAndSetUser = useCallback((newToken) => {
+    if (!newToken) {
       setToken(null);
       setUser(null);
+      localStorage.removeItem('token');
+      return;
     }
-    setLoading(false);
+
+    try {
+      const decoded = jwtDecode(newToken);
+      const isExpired = decoded.exp * 1000 < Date.now();
+
+      if (isExpired) {
+        throw new Error('Token expired');
+      }
+
+      setToken(newToken);
+      setUser({
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+      });
+      localStorage.setItem('token', newToken);
+    } catch (err) {
+      console.error('Token error:', err.message);
+      setToken(null);
+      setUser(null);
+      localStorage.removeItem('token');
+    }
   }, []);
 
   useEffect(() => {
-    updateUserFromToken(token);
-  }, [token, updateUserFromToken]);
+    const existingToken = localStorage.getItem('token');
+    decodeAndSetUser(existingToken);
+    setLoading(false);
+  }, [decodeAndSetUser]);
+
+  // Listen to changes in token across tabs
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === 'token') {
+        decodeAndSetUser(localStorage.getItem('token'));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [decodeAndSetUser]);
 
   const login = async (email, password) => {
     try {
       setError(null);
       const res = await API.post('/auth/login', { email, password });
-      updateUserFromToken(res.data.token);
+      decodeAndSetUser(res.data.token);
     } catch (err) {
-      console.error("Login failed:", err.response?.data?.message || err.message);
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
-      // Keep token and user null/previous state on error
+      const message = err.response?.data?.message || 'Login failed.';
+      console.error(message);
+      setError(message);
     }
   };
 
@@ -51,24 +75,41 @@ export const AuthProvider = ({ children }) => {
     try {
       setError(null);
       const res = await API.post('/auth/register', { name, email, password });
-      // Assuming successful registration also returns a token and logs the user in
-      updateUserFromToken(res.data.token);
+      decodeAndSetUser(res.data.token);
     } catch (err) {
-      console.error("Registration failed:", err.response?.data?.message || err.message);
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
-      // Keep token and user null/previous state on error
+      const message = err.response?.data?.message || 'Registration failed.';
+      console.error(message);
+      setError(message);
     }
   };
 
   const logout = () => {
-    updateUserFromToken(null);
+    decodeAndSetUser(null);
   };
 
   const isAuthenticated = !!token && !!user;
 
   return (
-    <AuthContext.Provider value={{ token, user, isAuthenticated, login, logout, register, loading, error, setError }}>
-      {children}
+    <AuthContext.Provider
+      value={{
+        token,
+        user,
+        isAuthenticated,
+        login,
+        logout,
+        register,
+        loading,
+        error,
+        setError,
+      }}
+    >
+      {loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '20%' }}>
+          <span>Loading authentication...</span>
+        </div>
+      ) : (
+        children
+      )}
     </AuthContext.Provider>
   );
 };

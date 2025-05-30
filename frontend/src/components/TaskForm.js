@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { TextField, Button, Select, MenuItem, FormControl, InputLabel, Box } from "@mui/material";
+import {
+  TextField,
+  Button,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Box,
+} from "@mui/material";
 
 const TaskForm = ({ onSubmit, taskToEdit, onCancel }) => {
   const [title, setTitle] = useState("");
@@ -62,7 +70,7 @@ const TaskForm = ({ onSubmit, taskToEdit, onCancel }) => {
           <MenuItem value="done">Done</MenuItem>
         </Select>
       </FormControl>
-      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
         {taskToEdit && (
           <Button onClick={onCancel} sx={{ mr: 1 }}>
             Cancel

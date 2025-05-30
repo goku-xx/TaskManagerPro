@@ -4,7 +4,10 @@ import { AuthContext } from '../context/AuthContext';
 import TaskCard from './TaskCard';
 import TaskForm from './TaskForm';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Container, Grid, Paper, Typography, Button, Modal, Box, CircularProgress, Alert } from '@mui/material';
+import {
+  Container, Grid, Paper, Typography, Button, Modal,
+  Box, CircularProgress, Alert
+} from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 
 const modalStyle = {
@@ -20,63 +23,40 @@ const modalStyle = {
 };
 
 const columnsFromBackend = {
-  todo: {
-    name: 'To Do',
-    items: [],
-  },
-  inprogress: {
-    name: 'In Progress',
-    items: [],
-  },
-  done: {
-    name: 'Done',
-    items: [],
-  },
+  todo: { name: 'To Do', items: [] },
+  inprogress: { name: 'In Progress', items: [] },
+  done: { name: 'Done', items: [] },
 };
 
 function KanbanBoard() {
   const [columns, setColumns] = useState(columnsFromBackend);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { user } = useContext(AuthContext); // For potential user-specific tasks if API supports it
-
   const [openModal, setOpenModal] = useState(false);
   const [taskToEdit, setTaskToEdit] = useState(null);
+  const { user } = useContext(AuthContext);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await API.get('/tasks'); // Assumes API returns all tasks for the user
-      const newColumns = JSON.parse(JSON.stringify(columnsFromBackend)); // Deep copy
-      // Initialize items arrays for each column to prevent errors if res.data is empty
-      newColumns.todo.items = [];
-      newColumns.inprogress.items = [];
-      newColumns.done.items = [];
-
+      const res = await API.get('/tasks');
+      const newColumns = { ...columnsFromBackend };
       res.data.forEach(task => {
-        if (newColumns[task.status]) {
-          newColumns[task.status].items.push(task);
-        } else {
-          console.warn(`Task with unknown status: ${task.status}`, task);
-          newColumns.todo.items.push(task); // Default to 'todo'
-        }
+        const col = newColumns[task.status] || newColumns['todo'];
+        col.items.push(task);
       });
       setColumns(newColumns);
     } catch (err) {
-      console.error("Failed to fetch tasks:", err);
       setError(err.response?.data?.message || "Could not load tasks. Please try again later.");
     } finally {
       setLoading(false);
     }
-    // API and columnsFromBackend are stable. setLoading, setError, setColumns are stable setters.
-  }, [/* No external component-scope dependencies that change over time needed here */]);
+  }, []);
 
   useEffect(() => {
-    if (user) { // Only fetch tasks if a user is authenticated
-      fetchTasks();
-    }
-  }, [user, fetchTasks]); // Re-run if user changes or fetchTasks reference changes (it's stable due to useCallback)
+    if (user) fetchTasks();
+  }, [user, fetchTasks]);
 
   const handleOpenModal = (task = null) => {
     setTaskToEdit(task);
@@ -91,78 +71,74 @@ function KanbanBoard() {
   const handleSubmitTask = async (taskData) => {
     setError(null);
     try {
-      if (taskData._id) { // Editing existing task
-        await API.put(`/tasks/${taskData._id}`, taskData);
-      } else { // Adding new task
-        await API.post('/tasks', taskData);
+      if (taskData._id) {
+        const updatedPayload = {
+          ...taskToEdit,
+          title: taskData.title,
+          description: taskData.description,
+          status: taskData.status,
+        };
+        const { _id, ...data } = updatedPayload;
+        await API.put(`/tasks/${_id}`, data);
+      } else {
+        if (!user?._id) {
+          setError("User not authenticated. Please log in.");
+          return;
+        }
+        const newTask = {
+          title: taskData.title,
+          description: taskData.description,
+          status: taskData.status,
+          projectId: user._id,
+        };
+        await API.post('/tasks', newTask);
       }
-      fetchTasks(); // Refresh tasks
+      fetchTasks();
       handleCloseModal();
     } catch (err) {
-      console.error("Failed to save task:", err);
-      setError(err.response?.data?.message || "Could not save task.");
-      // Keep modal open on error if desired, or display error in modal
+      setError(err.response?.data?.message || "Could not save task. Please try again.");
     }
   };
 
   const handleDeleteTask = async (taskId) => {
-    setError(null);
-    if (window.confirm("Are you sure you want to delete this task?")) {
-      try {
-        await API.delete(`/tasks/${taskId}`);
-        fetchTasks(); // Refresh tasks
-      } catch (err) {
-        console.error("Failed to delete task:", err);
-        setError(err.response?.data?.message || "Could not delete task.");
-      }
+    if (!window.confirm("Are you sure you want to delete this task?")) return;
+    try {
+      await API.delete(`/tasks/${taskId}`);
+      fetchTasks();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not delete task.");
     }
   };
 
   const onDragEnd = async (result) => {
-    if (!result.destination) return;
     const { source, destination, draggableId } = result;
+    if (!destination || (source.droppableId === destination.droppableId && source.index === destination.index)) return;
 
-    if (source.droppableId === destination.droppableId && source.index === destination.index) {
-      return; // Item dropped in the same place
-    }
-    
     const taskToMove = columns[source.droppableId].items.find(task => task._id === draggableId);
     if (!taskToMove) return;
 
-    // Optimistic UI Update
-    const sourceColumn = columns[source.droppableId];
-    const destColumn = columns[destination.droppableId];
-    const sourceItems = [...sourceColumn.items];
-    const destItems = (source.droppableId === destination.droppableId) ? sourceItems : [...destColumn.items];
-    
+    const sourceItems = [...columns[source.droppableId].items];
+    const destItems = source.droppableId === destination.droppableId
+      ? sourceItems
+      : [...columns[destination.droppableId].items];
+
     const [removed] = sourceItems.splice(source.index, 1);
     destItems.splice(destination.index, 0, removed);
 
     setColumns({
       ...columns,
-      [source.droppableId]: {
-        ...sourceColumn,
-        items: sourceItems,
-      },
-      [destination.droppableId]: {
-        ...destColumn,
-        items: destItems,
-      },
+      [source.droppableId]: { ...columns[source.droppableId], items: sourceItems },
+      [destination.droppableId]: { ...columns[destination.droppableId], items: destItems },
     });
 
-    // API Call to update task status
     try {
       await API.put(`/tasks/${draggableId}`, { ...taskToMove, status: destination.droppableId });
-      // If API call is successful, the optimistic update is fine.
-      // Optionally, refetchTasks() for full consistency, but can cause a flicker.
     } catch (err) {
-      console.error("Failed to update task status:", err);
-      setError(err.response?.data?.message || "Could not update task status. Reverting.");
-      // Revert UI on error
-      fetchTasks(); // Or more sophisticated revert logic
+      setError(err.response?.data?.message || "Failed to update task. Reverting.");
+      fetchTasks(); // Optionally rollback on failure
     }
   };
-  
+
   if (loading) {
     return (
       <Container sx={{ py: 4, textAlign: 'center' }}>
@@ -173,10 +149,8 @@ function KanbanBoard() {
 
   return (
     <Container sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1">
-          Kanban Board
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h4">Kanban Board</Typography>
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenModal()}>
           Add Task
         </Button>
@@ -188,37 +162,34 @@ function KanbanBoard() {
         <Grid container spacing={3}>
           {Object.entries(columns).map(([columnId, column]) => (
             <Grid item xs={12} md={4} key={columnId}>
-              <Paper elevation={2} sx={{ p: 2, backgroundColor: '#e9ecef', minHeight: '70vh' }}>
-                <Typography variant="h6" gutterBottom sx={{ textAlign: 'center', mb: 2 }}>
+              <Paper elevation={2} sx={{ p: 2, bgcolor: '#f8f9fa', minHeight: '70vh' }}>
+                <Typography variant="h6" align="center" gutterBottom>
                   {column.name} ({column.items.length})
                 </Typography>
-                <Droppable droppableId={columnId} key={columnId}>
+                <Droppable droppableId={columnId}>
                   {(provided, snapshot) => (
                     <Box
                       ref={provided.innerRef}
                       {...provided.droppableProps}
                       sx={{
-                        background: snapshot.isDraggingOver ? 'lightblue' : 'transparent',
-                        padding: '4px',
-                        minHeight: '60vh', // Ensure droppable area is large enough
+                        backgroundColor: snapshot.isDraggingOver ? '#dfefff' : 'transparent',
+                        p: 1,
+                        minHeight: '60vh',
+                        borderRadius: 1,
                       }}
                     >
-                      {column.items.map((item, index) => (
-                        <Draggable key={item._id} draggableId={item._id} index={index}>
-                          {(provided, snapshot) => (
+                      {column.items.map((task, index) => (
+                        <Draggable key={task._id} draggableId={task._id} index={index}>
+                          {(provided) => (
                             <Box
                               ref={provided.innerRef}
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
-                              sx={{
-                                userSelect: 'none',
-                                mb: 1,
-                                ...provided.draggableProps.style,
-                              }}
+                              sx={{ mb: 2, ...provided.draggableProps.style }}
                             >
                               <TaskCard
-                                task={item}
-                                onEdit={() => handleOpenModal(item)}
+                                task={task}
+                                onEdit={() => handleOpenModal(task)}
                                 onDelete={handleDeleteTask}
                               />
                             </Box>
@@ -235,14 +206,9 @@ function KanbanBoard() {
         </Grid>
       </DragDropContext>
 
-      <Modal
-        open={openModal}
-        onClose={handleCloseModal}
-        aria-labelledby="task-form-modal-title"
-        aria-describedby="task-form-modal-description"
-      >
+      <Modal open={openModal} onClose={handleCloseModal}>
         <Box sx={modalStyle}>
-          <Typography id="task-form-modal-title" variant="h6" component="h2" gutterBottom>
+          <Typography variant="h6" gutterBottom>
             {taskToEdit ? 'Edit Task' : 'Add New Task'}
           </Typography>
           <TaskForm

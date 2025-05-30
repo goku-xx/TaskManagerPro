@@ -6,8 +6,18 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'YOUR_ACTUAL_GENERATED
   console.error('FATAL ERROR: JWT_SECRET is not set or is still the placeholder. Please set a strong secret in your .env file.');
   // process.exit(1); // Optionally exit if the secret is not configured
 }
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+// ✅ Include email and optional role in the token
+const generateToken = (user) => {
+  return jwt.sign(
+    {
+      id: user._id,
+      email: user.email,
+      role: user.role || 'user' // optional role support
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
 };
 
 exports.registerUser = async (req, res) => {
@@ -18,17 +28,15 @@ exports.registerUser = async (req, res) => {
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const user = await User.create({ name, email, password: hashedPassword });
 
-    const token = generateToken(user._id);
-    // console.log('Generated Token:', token); // Temporary: Log the generated token
+    const token = generateToken(user);
 
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
-      token: generateToken(user._id)
+      token
     });
   } catch (error) {
     console.error('Register error:', error);
@@ -46,11 +54,13 @@ exports.loginUser = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
 
+    const token = generateToken(user);
+
     res.json({
       _id: user._id,
       name: user.name,
       email: user.email,
-      token: generateToken(user._id)
+      token
     });
   } catch (error) {
     console.error('Login error:', error);

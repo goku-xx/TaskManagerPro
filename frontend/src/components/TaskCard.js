@@ -1,5 +1,12 @@
 import React from "react";
-import { Card, CardContent, Typography, CardActions, Button, Chip } from "@mui/material";
+import {
+  Card,
+  CardContent,
+  Typography,
+  CardActions,
+  Button,
+  Chip,
+} from "@mui/material";
 
 const TaskCard = ({ task, onEdit, onDelete }) => {
   const getStatusColor = (status) => {
@@ -24,7 +31,11 @@ const TaskCard = ({ task, onEdit, onDelete }) => {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {task.description}
         </Typography>
-        <Chip label={task.status.toUpperCase()} color={getStatusColor(task.status)} size="small" />
+        <Chip
+          label={task.status.toUpperCase()}
+          color={getStatusColor(task.status)}
+          size="small"
+        />
       </CardContent>
       <CardActions>
         <Button size="small" onClick={() => onEdit(task)}>

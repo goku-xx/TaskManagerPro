@@ -1,23 +1,27 @@
 // d:\TaskManagerPro\frontend\src\api.js
 import axios from 'axios';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-// Ensure this matches your backend's actual running port and base API path.
-// Your backend .env (playground-1.mongodb.js) suggests PORT=3000.
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000/api'; 
-
+// Create an Axios instance
 const API = axios.create({
   baseURL: API_URL,
 });
 
+// Add a request interceptor to include the token from localStorage
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    // Do something with request error
+    return Promise.reject(error);
+  }
 );
 
+// You can still export individual functions if needed, or just the instance
+// export const exampleApiCall = async () => { ... }
 export default API;
